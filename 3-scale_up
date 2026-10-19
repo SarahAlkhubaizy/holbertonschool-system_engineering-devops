@@ -1,0 +1,44 @@
+# 3. Scale up
+
+Diagram: <file:///C:/Users/HUAWEI/Downloads/scale_up_web_infrastructure_foobar.svg>
+
+## Infrastructure
+
+Starting from the previous design (1 load balancer + 2 servers), we add:
+
+- **1 additional server**
+- **1 additional load balancer (HAProxy)**, configured as a cluster with the first one
+- **Components split**: the web server, the application server and the database each run on their own server
+
+Final infrastructure:
+
+- 1 domain name: `foobar.com`, with a `www` A record pointing to the **virtual IP** shared by the load balancer cluster
+- 2 load balancers (HAProxy) in a cluster (Active-Passive)
+- 1 server for the web server (Nginx)
+- 1 server for the application server (with the code base)
+- 1 server for the database (MySQL)
+
+The firewalls, the SSL certificate (HTTPS) and the monitoring clients from the previous design still apply to every server. They are left out of the diagram only to keep it readable.
+
+## Request flow
+
+1. The user types `www.foobar.com`. DNS returns the virtual IP of the load balancer cluster.
+2. The active load balancer (LB 1) receives the request.
+3. It forwards the request to the web server (Nginx), which serves static files and passes dynamic requests to the application server.
+4. The application server runs the code base and queries the database server.
+5. The response goes back through the same path to the user.
+6. If LB 1 fails, LB 2 takes over the virtual IP and continues serving traffic.
+
+## Why each additional element is added
+
+- **Additional load balancer (HAProxy cluster):** in the previous design the single load balancer was a SPOF: if it failed, the website would be unreachable. With two load balancers in a cluster, one is Active and handles the traffic while the other is Passive and waits on standby. They exchange a heartbeat (for example with Keepalived/VRRP) and share a virtual IP. If the active one stops responding, the passive one takes over the virtual IP automatically, so users notice no interruption. Both use the same HAProxy configuration.
+- **Additional server (components split into their own servers):** instead of every server running the web server, application server and database together, each component now has its own server. We add one server so that:
+  - **Web server (Nginx) on its own server:** it handles incoming connections and static files without competing with the application or the database for resources. It can be scaled or replaced independently.
+  - **Application server on its own server:** running the code is CPU and memory heavy. Separating it lets us give it the resources it needs and add more application servers later if the traffic grows.
+  - **Database on its own server:** MySQL needs a lot of RAM and fast disk I/O. Isolating it protects its performance, and it is more secure because only the application server needs to be able to reach it (the database is not exposed to the web server or the internet).
+  - In general, splitting the components lets us scale, secure, maintain and troubleshoot each layer independently, and a problem in one component no longer takes the others down with it.
+
+## Remaining issues
+
+- The web server, the application server and the database are each a single server, so each of them is still a SPOF.
+- To handle more traffic we would need to add more web and application servers behind the load balancers, and replicate the database (Primary-Replica).
