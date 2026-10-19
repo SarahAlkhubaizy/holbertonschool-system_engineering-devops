@@ -1,0 +1,51 @@
+# 0. Simple web stack
+
+
+
+
+## Request flow
+
+1. The user types `www.foobar.com` in their browser.
+2. The browser asks a DNS resolver for the IP of `www.foobar.com`. The DNS answers `8.8.8.8` (the `www` A record).
+3. The browser opens a TCP connection to `8.8.8.8` and sends an HTTP(S) request.
+4. Nginx (web server) receives the request. Static files (HTML, CSS, images) are served directly. Dynamic requests are forwarded to the application server.
+5. The application server runs the code base, queries MySQL if it needs data, and builds the response.
+6. The response travels back through Nginx to the user's browser.
+
+## Infrastructure
+
+- 1 domain name: `foobar.com`, with a `www` record pointing to `8.8.8.8`
+- 1 server (`8.8.8.8`) containing:
+  - 1 web server: Nginx
+  - 1 application server
+  - 1 application files (code base)
+  - 1 database: MySQL
+
+## Explanations
+
+**What is a server?**
+A server is a computer (physical or virtual) that runs software to provide a service to other computers (clients) over a network. Here, one machine hosts everything needed to run the website.
+
+**What is the role of the domain name?**
+It is a human-readable name that maps to an IP address, so users do not need to remember `8.8.8.8`. DNS translates `foobar.com` / `www.foobar.com` into the server's IP.
+
+**What type of DNS record is `www` in `www.foobar.com`?**
+An **A record**. It maps the hostname `www` to the IPv4 address `8.8.8.8`.
+
+**What is the role of the web server?**
+Nginx accepts incoming HTTP/HTTPS requests from users, serves static content, and forwards dynamic requests to the application server. It then returns the response to the client.
+
+**What is the role of the application server?**
+It executes the application code (business logic), generates dynamic content, and talks to the database. It turns a request into a response that Nginx can send back.
+
+**What is the role of the database?**
+MySQL stores and organizes the website's data (users, content, etc.) so the application can read, write, and update it persistently.
+
+**What does the server use to communicate with the user's computer?**
+The network, using the TCP/IP protocol suite. The application-level protocol is HTTP (or HTTPS for encrypted traffic).
+
+## Issues with this infrastructure
+
+- **SPOF (Single Point of Failure):** everything is on one server. If it goes down (hardware failure, crash, network issue), the whole website is unavailable.
+- **Downtime during maintenance:** deploying new code or updating configuration often requires restarting the web server or application server, which makes the site unavailable for a moment.
+- **Cannot scale:** with a single server, a large increase in incoming traffic cannot be handled. The server's resources (CPU, RAM) become the bottleneck, and there is no second server to share the load.
