@@ -1,0 +1,58 @@
+# 1. Distributed web infrastructure
+
+Diagram: <file:///C:/Users/HUAWEI/Downloads/distributed_web_infrastructure_foobar.svg>
+
+## Infrastructure
+
+- 1 domain name: `foobar.com`, with a `www` A record pointing to the load balancer IP `8.8.8.8`
+- 1 load balancer: HAProxy
+- 2 servers, each containing:
+  - 1 web server: Nginx
+  - 1 application server
+  - 1 set of application files (code base)
+  - 1 database: MySQL (Server 1 = Primary, Server 2 = Replica)
+
+## Request flow
+
+1. The user types `www.foobar.com`. DNS returns the IP of the load balancer.
+2. The request reaches HAProxy, which picks one of the two servers using its distribution algorithm.
+3. Nginx on that server receives the request. Static files are served directly; dynamic requests are passed to the application server.
+4. The application server runs the code base and queries MySQL (writes go to the Primary, reads can go to the Replica).
+5. The response goes back through Nginx and HAProxy to the user.
+
+## Why each additional element is added
+
+- **Second server:** removes the single server as the only point of failure and adds capacity. If one server goes down or is being updated, the other keeps serving traffic.
+- **Load balancer (HAProxy):** distributes incoming traffic across the servers so none is overloaded. It also detects failed servers (health checks) and stops sending traffic to them, and lets us deploy or restart one server at a time with no downtime.
+- **Database Replica:** keeps a live copy of the data on a second server. It provides redundancy (a copy exists if the Primary is lost), and read requests can be served by the Replica to reduce the load on the Primary.
+
+## Load balancer distribution algorithm
+
+HAProxy is configured with **Round Robin**. Requests are sent to each server in turn: request 1 goes to Server 1, request 2 to Server 2, request 3 to Server 1 again, and so on. This spreads the requests evenly when servers have similar capacity and requests have similar cost. (Weighted round robin can be used if one server is more powerful.)
+
+## Active-Active vs Active-Passive
+
+The load balancer here enables an **Active-Active** setup: both servers are running and handling traffic at the same time.
+
+- **Active-Active:** all nodes serve requests simultaneously and share the load. If one fails, the others take over its traffic. Better resource usage and capacity, but the remaining nodes must be able to handle the full load.
+- **Active-Passive:** only one node (active) serves traffic while the other (passive) stays on standby and takes over only if the active node fails. Simpler, but the standby's resources are unused during normal operation.
+
+## Database Primary-Replica (Master-Slave) cluster
+
+The **Primary** node accepts all write operations (INSERT, UPDATE, DELETE) and records every change in its binary log. The **Replica** node connects to the Primary, reads that log, and replays the same changes on its own copy of the data, so it stays in sync (usually with a small delay).
+
+**Difference between Primary and Replica for the application:**
+- The **Primary** is used for **writes** (and reads that must be fully up to date). The application must send all write queries here.
+- The **Replica** is **read-only** for the application. It serves read queries (SELECT), which reduces the load on the Primary. Writing to a Replica would make the data diverge, so it is not allowed.
+- If the Primary fails, a Replica can be promoted to become the new Primary (manually or with automation).
+
+## Issues with this infrastructure
+
+- **SPOF (Single Points of Failure):**
+  - The load balancer: there is only one HAProxy. If it fails, the whole website is unreachable even though both servers are healthy.
+  - The MySQL Primary: if it fails, no writes are possible until a Replica is promoted.
+  - Each server also hosts all its components together, so a failure on a server takes down its web server, application server and database at once.
+- **Security issues:**
+  - No firewall: servers are not protected by network filtering, so unnecessary ports and services are exposed.
+  - No HTTPS: traffic between the user and the site is not encrypted (no SSL/TLS certificate), so data can be intercepted or modified.
+- **No monitoring:** nothing watches the servers, the load balancer or the database, so failures, slowdowns or traffic spikes go unnoticed and nobody is alerted.
